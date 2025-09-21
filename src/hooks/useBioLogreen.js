@@ -79,7 +79,7 @@ export const useBioLogreen = ({ apiEndpoint, onSuccess, onFailure }) => {
 
     return {
         webcamRef,
-        status, // 'idle', 'detecting', 'capturing', 'success', 'error'
+        status, 
         modelsLoaded,
         startDetection,
     };
