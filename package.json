@@ -1,6 +1,6 @@
 {
   "name": "@biologreen/react",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "The official React SDK for the Bio-Logreen Facial Authentication API.",
   "main": "dist/biologreen-react-sdk.umd.js",
   "module": "dist/biologreen-react-sdk.es.js",

@@ -2,85 +2,95 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import * as faceapi from 'face-api.js';
 import axios from 'axios';
 
-export const useBioLogreen = ({ apiEndpoint, onSuccess, onFailure }) => {
+// This is the improved hook, consistent with your other SDKs
+export const useBioLogreen = ({ apiKey, baseURL = 'https://api.biologreen.com/v1' }) => {
     const [modelsLoaded, setModelsLoaded] = useState(false);
-    const [status, setStatus] = useState('idle'); // idle, detecting, capturing, success, error
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [faceDetected, setFaceDetected] = useState(false);
+
     const webcamRef = useRef(null);
     const detectionInterval = useRef(null);
 
     // 1. Load AI Models
     useEffect(() => {
         const loadModels = async () => {
-            const MODEL_URL = '/models'; // The developer must host these models
+            // The developer must host these model files in their /public/models folder
+            const MODEL_URL = '/models'; 
             try {
                 await Promise.all([
                     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
                 ]);
                 setModelsLoaded(true);
-            } catch (error) {
-                console.error('BioLogreen SDK Error: Could not load face models.', error);
-                setStatus('error');
-                if (onFailure) onFailure({ message: "AI models failed to load." });
+            } catch (err) {
+                console.error('BioLogreen SDK Error: Could not load face models.', err);
+                setError({ message: "AI models failed to load." });
             }
         };
         loadModels();
-    }, [onFailure]);
-
-    // 2. The function to start face detection
-    const startDetection = useCallback(() => {
-        if (!modelsLoaded || status === 'detecting') return;
-        
-        setStatus('detecting');
-        detectionInterval.current = setInterval(async () => {
-            if (webcamRef.current && webcamRef.current.video) {
-                const video = webcamRef.current.video;
-                if (video.readyState !== 4) return;
-
-                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
-                if (detections.length === 1) {
-                    clearInterval(detectionInterval.current);
-                    setStatus('capturing');
-                    // Wait a moment for a clear shot, then capture
-                    setTimeout(() => captureAndAuthenticate(), 500);
-                }
-            }
-        }, 1000);
-    }, [modelsLoaded, status]);
-
-    // 3. The function to capture the image and call the API
-    const captureAndAuthenticate = async () => {
-        if (webcamRef.current) {
-            const imageSrc = webcamRef.current.getScreenshot();
-            if (!imageSrc) {
-                setStatus('error');
-                if (onFailure) onFailure({ message: "Could not capture image." });
-                return;
-            }
-            const base64Data = imageSrc.split(',')[1];
-            try {
-                const response = await axios.post(apiEndpoint, { image_base64: base64Data });
-                setStatus('success');
-                if (onSuccess) onSuccess(response.data);
-            } catch (error) {
-                setStatus('error');
-                if (onFailure) onFailure(error.response?.data || { message: "Authentication failed." });
-            }
-        }
-    };
-
-    // Cleanup interval on unmount
-    useEffect(() => {
-        return () => {
-            if (detectionInterval.current) {
-                clearInterval(detectionInterval.current);
-            }
-        };
     }, []);
+
+    // 2. Function to capture an image and call the API
+    const captureAndAuthenticate = useCallback(async (endpoint, customFields = null) => {
+        if (!webcamRef.current) {
+            throw new Error("Webcam reference is not set.");
+        }
+
+        const imageSrc = webcamRef.current.getScreenshot();
+        if (!imageSrc) {
+            throw new Error("Could not capture an image from the webcam.");
+        }
+
+        const base64Data = imageSrc.split(',')[1];
+        const payload = { image_base64: base64Data };
+        if (customFields) {
+            payload.custom_fields = customFields;
+        }
+
+        const response = await axios.post(`${baseURL}${endpoint}`, payload, {
+            headers: { 'X-API-KEY': apiKey }
+        });
+
+        return response.data;
+    }, [apiKey, baseURL]);
+
+    // 3. The new public functions that developers will call
+    const signupWithFace = useCallback(async (customFields = null) => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const result = await captureAndAuthenticate('/auth/signup-face', customFields);
+            setIsLoading(false);
+            return result;
+        } catch (err) {
+            setIsLoading(false);
+            const apiError = err.response?.data || { message: "An unknown error occurred." };
+            setError(apiError);
+            throw apiError;
+        }
+    }, [captureAndAuthenticate]);
+
+    const loginWithFace = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const result = await captureAndAuthenticate('/auth/login-face');
+            setIsLoading(false);
+            return result;
+        } catch (err) {
+            setIsLoading(false);
+            const apiError = err.response?.data || { message: "An unknown error occurred." };
+            setError(apiError);
+            throw apiError;
+        }
+    }, [captureAndAuthenticate]);
 
     return {
         webcamRef,
-        status, 
         modelsLoaded,
-        startDetection,
+        isLoading,
+        error,
+        signupWithFace,
+        loginWithFace,
     };
 };
